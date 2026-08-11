@@ -62,6 +62,21 @@ var (
 	StreamErrorsTotal        CounterVec
 	RouteLookupFailuresTotal Counter
 	PanicRecoveriesTotal     CounterVec
+
+	// ResolutionFailuresTotal counts requests whose logical operation could not be
+	// resolved to a policy chain, labelled by resolver name and FailureKind. It
+	// sits alongside RouteLookupFailuresTotal rather than replacing it: that one
+	// counts a route with no chain at all, this one counts a route that resolved
+	// to no chain. Dashboards need both, because an unknown-operation failure is
+	// rendered as an HTTP 404 that is otherwise indistinguishable from an Envoy
+	// route-not-found.
+	ResolutionFailuresTotal CounterVec
+
+	// RouteResolutionIngestFailuresTotal counts routes dropped at xDS ingest
+	// because their resolution config is unusable (unknown resolver, empty or
+	// malformed operation map, failing Prepare). A non-zero value here means part
+	// of a deployment is not being served, which no request-time metric shows.
+	RouteResolutionIngestFailuresTotal CounterVec
 )
 
 // initMetrics initializes all metric variables.
@@ -275,6 +290,24 @@ func initMetrics() {
 		},
 		[]string{"component"},
 	)
+
+	ResolutionFailuresTotal = newCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "resolution_failures_total",
+			Help:      "Total number of requests whose logical operation could not be resolved to a policy chain",
+		},
+		[]string{"resolver", "kind"},
+	)
+
+	RouteResolutionIngestFailuresTotal = newCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "route_resolution_ingest_failures_total",
+			Help:      "Total number of routes skipped at xDS ingest because their resolution config is unusable",
+		},
+		[]string{"reason"},
+	)
 }
 
 func registerCounterVec(v CounterVec) {
@@ -374,6 +407,8 @@ func initRegistry() {
 	registerCounterVec(StreamErrorsTotal)
 	registerCounter(RouteLookupFailuresTotal)
 	registerCounterVec(PanicRecoveriesTotal)
+	registerCounterVec(ResolutionFailuresTotal)
+	registerCounterVec(RouteResolutionIngestFailuresTotal)
 
 	Up.Set(1)
 }
