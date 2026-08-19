@@ -232,7 +232,7 @@ func (t *LLMProviderTransformer) transformProxy(proxy *api.LLMProxyConfiguration
 		spec.Policies = &[]api.Policy{hh}
 
 		// Update spec upstream hostRewrite to Manual
-		hostRewrite := api.Manual
+		hostRewrite := api.UpstreamHostRewriteManual
 		spec.Upstream.Main.HostRewrite = &hostRewrite
 	}
 
