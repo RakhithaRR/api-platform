@@ -37,6 +37,7 @@ import (
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/metrics"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/policyxds"
+	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/service/agent"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/service/restapi"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/storage"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/transform"
@@ -563,7 +564,18 @@ func main() {
 		&http.Client{Timeout: 10 * time.Second}, config.NewParser(), validator, log,
 		eventHubInstance, secretsService,
 	)
-	igw := immutable.NewImmutableGW(cfg.ImmutableGateway, restAPIService, llmSvc, mcpSvc)
+	agentSvc := agent.NewAgentService(
+		configStore, db, config.NewParser(),
+		config.NewAgentValidator().WithPolicyValidator(config.NewPolicyValidator(policyDefinitions)),
+		log, eventHubInstance, secretsService, cfg.Controller.Server.GatewayID,
+	)
+	// The DP->CP push is wired for Agents on the same terms as the LLM and MCP
+	// services above, and stays off until the control plane models the Agent kind
+	// — see agent.ControlPlanePushSupported.
+	agentSvc.SetControlPlanePusher(cpClient,
+		agent.ControlPlanePushSupported && cfg.Controller.ControlPlane.DeploymentSyncEnabled)
+
+	igw := immutable.NewImmutableGW(cfg.ImmutableGateway, restAPIService, llmSvc, mcpSvc, agentSvc)
 
 	authConfig := generateAuthConfig(cfg)
 	if cfg.Controller.Auth.IDP.Enabled && len(cfg.Controller.Auth.IDP.Audience) == 0 {
@@ -625,6 +637,7 @@ func main() {
 		subscriptionSnapshotManager,
 		secretsService,
 		restAPIService,
+		agentSvc,
 	)
 
 	// Load immutable gateway artifacts from the filesystem (no-op when immutable mode is disabled).
