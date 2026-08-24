@@ -920,6 +920,12 @@ func generateAuthConfig(config *config.Config) commonmodels.AuthConfig {
 		"POST /llm-proxies/{id}/api-keys/{apiKeyName}/regenerate": {"admin", "consumer"},
 		"DELETE /llm-proxies/{id}/api-keys/{apiKeyName}":          {"admin", "consumer"},
 
+		"POST /agents/{id}/api-keys":                         {"admin", "consumer"},
+		"GET /agents/{id}/api-keys":                          {"admin", "consumer"},
+		"PUT /agents/{id}/api-keys/{apiKeyName}":             {"admin", "consumer"},
+		"POST /agents/{id}/api-keys/{apiKeyName}/regenerate": {"admin", "consumer"},
+		"DELETE /agents/{id}/api-keys/{apiKeyName}":          {"admin", "consumer"},
+
 		// Root-level subscription endpoints
 		"POST /subscriptions":                    {"admin"},
 		"GET /subscriptions":                     {"admin"},
