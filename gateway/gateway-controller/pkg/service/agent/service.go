@@ -398,6 +398,82 @@ func (s *AgentService) Update(params UpdateParams) (*UpdateResult, error) {
 	return &UpdateResult{Config: existing}, nil
 }
 
+// UndeployParams holds parameters for the Undeploy operation.
+type UndeployParams struct {
+	// ID is the artifact UUID. Undeploy is addressed by id rather than handle
+	// because its only caller is the control plane, which knows the artifact it
+	// deployed but not the handle the gateway stored it under.
+	ID           string
+	DeploymentID string
+	// PerformedAt stamps the undeployment and decides the timestamp-guarded
+	// upsert below. Defaults to now.
+	PerformedAt   *time.Time
+	CorrelationID string
+	Logger        *slog.Logger
+}
+
+// Undeploy marks an Agent as undeployed while preserving its configuration for a
+// later redeploy.
+//
+// This is deliberately not Update: an undeploy event carries identifiers only,
+// with no document to parse, render, or validate — and re-rendering a stored
+// artifact just to take it out of service could fail on an unrelated secret that
+// has since gone missing, leaving the Agent serving traffic the control plane
+// believes is stopped.
+func (s *AgentService) Undeploy(params UndeployParams) (*UpdateResult, error) {
+	log := s.loggerFor(params.Logger)
+
+	cfg, err := s.db.GetConfig(params.ID)
+	if err != nil {
+		if storage.IsDatabaseUnavailableError(err) {
+			return nil, err
+		}
+		return nil, ErrNotFound
+	}
+	// An entity id is unique across kinds, so a kind mismatch means the event and
+	// the row disagree; undeploying anyway would take down another kind's
+	// artifact through the Agent lane.
+	if cfg.Kind != models.KindAgent {
+		return nil, ErrNotFound
+	}
+
+	// A stored deployment ID that names a different deployment means this event
+	// describes a revision this gateway never applied.
+	if cfg.DeploymentID != "" && params.DeploymentID != "" && cfg.DeploymentID != params.DeploymentID {
+		return nil, ErrDeploymentIDMismatch
+	}
+
+	undeployedAt := time.Now().Truncate(time.Millisecond)
+	if params.PerformedAt != nil && !params.PerformedAt.IsZero() {
+		undeployedAt = params.PerformedAt.Truncate(time.Millisecond)
+	}
+
+	updated := *cfg
+	updated.DesiredState = models.StateUndeployed
+	updated.DeploymentID = params.DeploymentID
+	updated.DeployedAt = &undeployedAt
+	updated.UpdatedAt = time.Now()
+
+	// Timestamp-guarded upsert: affected=false means a newer version of this
+	// artifact is already stored, so this request lost a race and must not
+	// publish an event that would make replicas converge backwards.
+	affected, err := s.db.UpsertConfig(&updated)
+	if err != nil {
+		return nil, fmt.Errorf("failed to persist agent undeployment: %w", err)
+	}
+	if !affected {
+		return nil, ErrUndeployStale
+	}
+
+	s.publishEvent("UPDATE", updated.UUID, params.CorrelationID, log)
+
+	log.Info("Agent configuration undeployed",
+		slog.String("agent_id", updated.UUID),
+		slog.String("handle", updated.Handle))
+
+	return &UpdateResult{Config: &updated}, nil
+}
+
 // DeleteParams holds parameters for the Delete operation.
 type DeleteParams struct {
 	Handle        string
