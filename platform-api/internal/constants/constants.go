@@ -81,6 +81,7 @@ const (
 	LLMProviderTemplate = "LlmProviderTemplate"
 	LLMProxy            = "LlmProxy"
 	MCPProxy            = "Mcp"
+	AgentProxy          = "AgentProxy"
 )
 
 // Artifact origin values. Origin distinguishes control-plane created artifacts
@@ -232,6 +233,7 @@ var ValidArtifactKinds = map[string]bool{
 	LLMProvider: true,
 	LLMProxy:    true,
 	MCPProxy:    true,
+	AgentProxy:  true,
 }
 
 // Throttle limit unit constants
